@@ -1,0 +1,13 @@
+.DS_Store
+
+# Temporary captcha images
+验证码_*.png
+**/验证码_*.png
+
+# Query result images may contain personal identity information.
+# Keep them local unless you explicitly decide to upload them to a private repo.
+results/*.png
+
+# Local scratch files
+*.tmp
+*.log
