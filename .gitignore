@@ -11,3 +11,6 @@ results/*.png
 # Local scratch files
 *.tmp
 *.log
+
+# Local brainstorming previews
+.superpowers/
