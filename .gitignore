@@ -17,3 +17,6 @@ results/*.png
 
 # Local feature worktrees
 .worktrees/
+
+# Local app runtime files
+.runtime/

@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import json
 import re
+import warnings
 from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import urljoin
 
+warnings.filterwarnings("ignore", message="urllib3 v2 only supports OpenSSL.*")
 import requests
 
 from .models import QueryItem
@@ -14,6 +16,7 @@ from .renderer import safe_filename_part
 
 BASE_URL = "https://zxgk.court.gov.cn/zhzxgk/"
 CAPTCHA_RE = re.compile(r'id="captchaId"\s+name="captchaId"\s+type="hidden"\s+value="([^"]+)"')
+
 
 
 @dataclass
