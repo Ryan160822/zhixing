@@ -84,7 +84,7 @@ if __name__ == "__main__":
 Run:
 
 ```bash
-python3 -m unittest tests.test_parser -v
+.venv/bin/python -m unittest tests.test_parser -v
 ```
 
 Expected: FAIL or ERROR because `zxgk_tool.parser` does not exist.
@@ -161,7 +161,7 @@ def parse_batch_lines(text: str) -> list[QueryItem]:
 Run:
 
 ```bash
-python3 -m unittest tests.test_parser -v
+.venv/bin/python -m unittest tests.test_parser -v
 ```
 
 Expected: all tests PASS.
@@ -227,7 +227,7 @@ if __name__ == "__main__":
 Run:
 
 ```bash
-python3 -m unittest tests.test_renderer -v
+.venv/bin/python -m unittest tests.test_renderer -v
 ```
 
 Expected: FAIL or ERROR because `zxgk_tool.renderer` does not exist.
@@ -399,7 +399,7 @@ def render_result_png(item: QueryItem, rows: list[dict], output_dir: Path, date_
 Run:
 
 ```bash
-python3 -m unittest tests.test_renderer -v
+.venv/bin/python -m unittest tests.test_renderer -v
 ```
 
 Expected: all tests PASS.
@@ -456,7 +456,7 @@ if __name__ == "__main__":
 Run:
 
 ```bash
-python3 -m unittest tests.test_client -v
+.venv/bin/python -m unittest tests.test_client -v
 ```
 
 Expected: FAIL or ERROR because `zxgk_tool.client` does not exist.
@@ -556,7 +556,7 @@ class CourtClient:
 Run:
 
 ```bash
-python3 -m unittest tests.test_client -v
+.venv/bin/python -m unittest tests.test_client -v
 ```
 
 Expected: all tests PASS.
@@ -612,7 +612,7 @@ if __name__ == "__main__":
 Run:
 
 ```bash
-python3 run_app.py
+.venv/bin/python run_app.py
 ```
 
 Expected: the Mac desktop window opens. Close it after verifying the layout.
@@ -635,7 +635,7 @@ git commit -m "Add Mac desktop app"
 Run:
 
 ```bash
-python3 -m unittest discover -v
+.venv/bin/python -m unittest discover -v
 ```
 
 Expected: all tests PASS.
@@ -645,7 +645,7 @@ Expected: all tests PASS.
 Run:
 
 ```bash
-python3 run_app.py
+.venv/bin/python run_app.py
 ```
 
 Expected: the app launches, parses sample rows, and can fetch a captcha when network access is available.

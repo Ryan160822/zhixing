@@ -4,11 +4,25 @@
 
 ## 使用方式
 
-启动 Mac 桌面 APP：
+启动 Mac 桌面 APP，推荐直接双击：
+
+```text
+启动被执行人查询助手.command
+```
+
+如果用终端启动，请使用项目自带的 Python 3.14 环境：
 
 ```bash
-python3 run_app.py
+.venv/bin/python run_app.py
 ```
+
+试用 iPhone 手机网页：
+
+```text
+启动手机网页版.command
+```
+
+启动后终端会显示两个地址。本机测试用 `127.0.0.1` 地址；iPhone 和电脑连接同一个 Wi-Fi 后，用 Safari 打开终端里显示的局域网地址。
 
 在 APP 中可以直接粘贴批量名单。识别规则：
 

@@ -35,6 +35,7 @@ class ZxgkApp(tk.Tk):
         self.title("被执行人批量查询助手")
         self.geometry("1180x760")
         self.minsize(980, 680)
+        self.configure(bg="#eaf1f7")
 
         self.client = CourtClient()
         self.items: list[QueryItem] = []
@@ -52,29 +53,65 @@ class ZxgkApp(tk.Tk):
         self.columnconfigure(0, weight=1)
         self.rowconfigure(1, weight=1)
 
-        header = ttk.Frame(self, padding=(14, 12))
+        style = ttk.Style(self)
+        style.configure("App.TFrame", background="#eaf1f7")
+        style.configure("Panel.TFrame", background="#ffffff")
+        style.configure("Title.TLabel", background="#eaf1f7", foreground="#16324a")
+        style.configure("Section.TLabel", background="#ffffff", foreground="#16324a")
+        style.configure("Status.TLabel", background="#ffffff", foreground="#4d6073")
+
+        header = ttk.Frame(self, padding=(18, 16, 18, 12), style="App.TFrame")
         header.grid(row=0, column=0, sticky="ew")
         header.columnconfigure(0, weight=1)
-        ttk.Label(header, text="被执行人批量查询助手", font=("PingFang SC", 22, "bold")).grid(row=0, column=0, sticky="w")
-        ttk.Label(header, text="粘贴名单后自动识别个人/企业；验证码人工输入，其余自动完成。").grid(row=1, column=0, sticky="w", pady=(4, 0))
+        ttk.Label(
+            header,
+            text="被执行人批量查询助手",
+            font=("PingFang SC", 23, "bold"),
+            style="Title.TLabel",
+        ).grid(row=0, column=0, sticky="w")
+        notice = tk.Frame(header, bg="#1d5d8f", highlightthickness=0)
+        notice.grid(row=1, column=0, sticky="ew", pady=(12, 0))
+        notice.columnconfigure(0, weight=1)
+        tk.Label(
+            notice,
+            text="粘贴名单后自动识别个人/企业；验证码人工输入，其余自动完成。",
+            bg="#1d5d8f",
+            fg="#ffffff",
+            font=("PingFang SC", 13, "bold"),
+            padx=14,
+            pady=9,
+            anchor="w",
+        ).grid(row=0, column=0, sticky="ew")
 
-        main = ttk.PanedWindow(self, orient=tk.HORIZONTAL)
-        main.grid(row=1, column=0, sticky="nsew", padx=14, pady=(0, 14))
+        main = tk.Frame(self, bg="#eaf1f7")
+        main.grid(row=1, column=0, sticky="nsew", padx=18, pady=(0, 18))
+        main.columnconfigure(0, weight=2, minsize=360)
+        main.columnconfigure(1, weight=3, minsize=540)
+        main.rowconfigure(0, weight=1)
 
-        left = ttk.Frame(main, padding=10)
-        right = ttk.Frame(main, padding=10)
-        main.add(left, weight=2)
-        main.add(right, weight=3)
+        left = ttk.Frame(main, padding=14, style="Panel.TFrame")
+        right = ttk.Frame(main, padding=14, style="Panel.TFrame")
+        left.grid(row=0, column=0, sticky="nsew", padx=(0, 8))
+        right.grid(row=0, column=1, sticky="nsew", padx=(8, 0))
 
         left.rowconfigure(1, weight=1)
         left.columnconfigure(0, weight=1)
-        ttk.Label(left, text="批量输入", font=("PingFang SC", 15, "bold")).grid(row=0, column=0, sticky="w")
-        self.input_text = tk.Text(left, height=14, wrap="word", font=("Menlo", 13))
-        self.input_text.grid(row=1, column=0, sticky="nsew", pady=(8, 10))
-        self.input_text.insert(
-            "1.0",
-            "330000199001011234 张三\n李四 33000019880505222X\n某某建设有限公司",
+        ttk.Label(left, text="批量输入", font=("PingFang SC", 15, "bold"), style="Section.TLabel").grid(row=0, column=0, sticky="w")
+        self.input_text = tk.Text(
+            left,
+            height=14,
+            wrap="word",
+            font=("Menlo", 13),
+            bg="#f7fafc",
+            fg="#16324a",
+            insertbackground="#1d5d8f",
+            relief="solid",
+            borderwidth=1,
+            highlightthickness=1,
+            highlightbackground="#cfdae6",
+            highlightcolor="#1d5d8f",
         )
+        self.input_text.grid(row=1, column=0, sticky="nsew", pady=(8, 10))
 
         buttons = ttk.Frame(left)
         buttons.grid(row=2, column=0, sticky="ew")
@@ -103,7 +140,7 @@ class ZxgkApp(tk.Tk):
 
         right.rowconfigure(1, weight=1)
         right.columnconfigure(0, weight=1)
-        ttk.Label(right, text="查询队列", font=("PingFang SC", 15, "bold")).grid(row=0, column=0, sticky="w")
+        ttk.Label(right, text="查询队列", font=("PingFang SC", 15, "bold"), style="Section.TLabel").grid(row=0, column=0, sticky="w")
         columns = ("index", "kind", "name", "card", "status", "output")
         self.tree = ttk.Treeview(right, columns=columns, show="headings", height=18)
         self.tree.heading("index", text="序号")
@@ -121,7 +158,7 @@ class ZxgkApp(tk.Tk):
         self.tree.grid(row=1, column=0, sticky="nsew", pady=(8, 10))
 
         self.status_var = tk.StringVar(value="准备就绪")
-        ttk.Label(right, textvariable=self.status_var).grid(row=2, column=0, sticky="ew")
+        ttk.Label(right, textvariable=self.status_var, style="Status.TLabel").grid(row=2, column=0, sticky="ew")
 
     def clear_input(self) -> None:
         if self.busy:

@@ -11,6 +11,8 @@ results/*.png
 # Local scratch files
 *.tmp
 *.log
+__pycache__/
+**/__pycache__/
 
 # Local brainstorming previews
 .superpowers/
@@ -20,3 +22,6 @@ results/*.png
 
 # Local app runtime files
 .runtime/
+
+# Python virtual environment
+.venv/
