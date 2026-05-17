@@ -27,7 +27,7 @@
 绿联 NAS / Docker 部署：
 
 ```bash
-docker compose up -d --build
+docker compose up -d
 ```
 
 详细步骤见：

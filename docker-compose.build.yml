@@ -1,6 +1,8 @@
 services:
   zxgk-query:
-    image: ghcr.io/ryan160822/zhixing:latest
+    build:
+      context: .
+    image: zxgk-query:latest
     container_name: zxgk-query
     restart: unless-stopped
     ports:

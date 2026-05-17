@@ -28,6 +28,14 @@ docker-compose.yml
 
 容器会运行手机网页服务 `run_mobile.py`，并监听 `0.0.0.0:8765`。
 
+默认 `docker-compose.yml` 会直接拉取 GitHub 自动构建的镜像：
+
+```text
+ghcr.io/ryan160822/zhixing:latest
+```
+
+如果你想在 NAS 上本地构建镜像，可以改用 `docker-compose.build.yml`。
+
 ## 目录持久化
 
 下面两个目录会保存在 NAS 项目目录里：
@@ -71,7 +79,7 @@ http://绿联NAS的IP:8765
 
 ```bash
 cd /volume1/docker/zxgk-query
-docker compose up -d --build
+docker compose up -d
 ```
 
 查看运行状态：
@@ -97,7 +105,17 @@ docker compose down
 ```bash
 cd /volume1/docker/zxgk-query
 git pull
-docker compose up -d --build
+docker compose pull
+docker compose up -d
+```
+
+## 本地构建方式
+
+如果 GitHub 镜像暂时还没有发布，或你的 NAS 无法访问 `ghcr.io`，可以使用本地构建：
+
+```bash
+cd /volume1/docker/zxgk-query
+docker compose -f docker-compose.build.yml up -d --build
 ```
 
 ## 注意事项
