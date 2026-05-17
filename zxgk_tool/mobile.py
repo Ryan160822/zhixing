@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import socket
 import threading
 import uuid
@@ -30,7 +31,7 @@ from .renderer import render_result_png
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 RESULTS_DIR = PROJECT_ROOT / "results"
 CAPTCHA_DIR = PROJECT_ROOT / ".runtime" / "mobile-captchas"
-DEFAULT_HOST = "0.0.0.0"
+DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 8765
 
 
@@ -686,6 +687,18 @@ class MobileHTTPServer(ThreadingHTTPServer):
         self.service = service
 
 
+def server_config_from_env() -> tuple[str, int]:
+    host = os.environ.get("ZXGK_HOST", DEFAULT_HOST)
+    port_text = os.environ.get("ZXGK_PORT", str(DEFAULT_PORT))
+    try:
+        port = int(port_text)
+    except ValueError as exc:
+        raise ValueError("ZXGK_PORT 必须是数字") from exc
+    if port < 1 or port > 65535:
+        raise ValueError("ZXGK_PORT 必须在 1 到 65535 之间")
+    return host, port
+
+
 def create_server(host: str = DEFAULT_HOST, port: int = DEFAULT_PORT) -> MobileHTTPServer:
     return MobileHTTPServer((host, port), MobileQueryService())
 
@@ -702,11 +715,13 @@ def local_network_url(port: int) -> str:
 
 
 def main() -> None:
-    server = create_server()
-    _, port = server.server_address
+    host, port = server_config_from_env()
+    server = create_server(host, port)
+    bound_host, bound_port = server.server_address
     print("手机网页服务已启动", flush=True)
-    print(f"本机打开：http://127.0.0.1:{port}", flush=True)
-    print(f"iPhone 同 Wi-Fi 打开：{local_network_url(port)}", flush=True)
+    print(f"监听地址：{bound_host}:{bound_port}", flush=True)
+    print(f"本机打开：http://127.0.0.1:{bound_port}", flush=True)
+    print(f"iPhone 同 Wi-Fi 打开：{local_network_url(bound_port)}", flush=True)
     print("按 Ctrl+C 停止服务", flush=True)
     try:
         server.serve_forever()

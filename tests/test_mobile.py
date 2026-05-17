@@ -3,9 +3,10 @@ from __future__ import annotations
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from zxgk_tool.client import CaptchaChallenge, SearchResult
-from zxgk_tool.mobile import MobileQueryService
+from zxgk_tool.mobile import DEFAULT_HOST, DEFAULT_PORT, MobileQueryService, server_config_from_env
 from zxgk_tool.models import STATUS_DONE, STATUS_WAITING_CAPTCHA
 
 
@@ -34,6 +35,19 @@ def fake_render(item, rows, output_dir: Path, date_text: str) -> Path:
 
 
 class MobileQueryServiceTest(unittest.TestCase):
+    def test_server_config_defaults_to_lucky_local_reverse_proxy_port(self) -> None:
+        with patch.dict("os.environ", {}, clear=True):
+            self.assertEqual(server_config_from_env(), (DEFAULT_HOST, DEFAULT_PORT))
+
+    def test_server_config_reads_host_and_port_from_environment(self) -> None:
+        with patch.dict("os.environ", {"ZXGK_HOST": "0.0.0.0", "ZXGK_PORT": "9001"}, clear=True):
+            self.assertEqual(server_config_from_env(), ("0.0.0.0", 9001))
+
+    def test_server_config_rejects_invalid_port(self) -> None:
+        with patch.dict("os.environ", {"ZXGK_PORT": "abc"}, clear=True):
+            with self.assertRaises(ValueError):
+                server_config_from_env()
+
     def test_start_job_fetches_first_captcha_and_returns_empty_input(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             service = MobileQueryService(
