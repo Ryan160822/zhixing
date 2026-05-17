@@ -24,6 +24,16 @@
 
 启动后终端会显示两个地址。本机测试用 `127.0.0.1` 地址；iPhone 和电脑连接同一个 Wi-Fi 后，用 Safari 打开终端里显示的局域网地址。
 
+绿联 NAS / Docker 部署：
+
+```bash
+docker compose up -d --build
+```
+
+详细步骤见：
+
+[docs/绿联NAS_Docker部署说明.md](docs/绿联NAS_Docker部署说明.md)
+
 在 APP 中可以直接粘贴批量名单。识别规则：
 
 - 一行内有 18 位身份证号：按个人查询。

@@ -1,0 +1,15 @@
+.git
+.DS_Store
+.venv
+.superpowers
+.worktrees
+.runtime
+results
+__pycache__
+**/__pycache__
+*.pyc
+*.pyo
+*.log
+*.tmp
+验证码_*.png
+**/验证码_*.png
