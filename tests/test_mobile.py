@@ -34,6 +34,13 @@ def fake_render(item, rows, output_dir: Path, date_text: str) -> Path:
     return path
 
 
+def fake_render_batch(items, output_dir: Path, date_text: str) -> Path:
+    output_dir.mkdir(parents=True, exist_ok=True)
+    path = output_dir / f"batch_{date_text}.png"
+    path.write_bytes(b"fake batch result")
+    return path
+
+
 class MobileQueryServiceTest(unittest.TestCase):
     def test_server_config_defaults_to_lucky_local_reverse_proxy_port(self) -> None:
         with patch.dict("os.environ", {}, clear=True):
@@ -83,6 +90,33 @@ class MobileQueryServiceTest(unittest.TestCase):
             self.assertFalse(old_captcha.exists())
             self.assertEqual(job["items"][1]["status"], STATUS_WAITING_CAPTCHA)
             self.assertEqual(job["currentCaptcha"]["itemIndex"], 2)
+
+    def test_more_than_two_items_generate_one_batch_png_after_all_complete(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            service = MobileQueryService(
+                client_factory=FakeClient,
+                output_dir=Path(temp_dir) / "results",
+                captcha_dir=Path(temp_dir) / "captchas",
+                render_result=fake_render,
+                render_batch_result=fake_render_batch,
+                today=lambda: "2026-05-16",
+            )
+            started = service.start_job(
+                "330000199001011234 张三\n"
+                "33000019880505222X 李四\n"
+                "某某建设有限公司"
+            )
+
+            first = service.submit_captcha(started["id"], "ABCD")
+            second = service.submit_captcha(first["id"], "ABCD")
+            final = service.submit_captcha(second["id"], "ABCD")
+
+            self.assertIsNone(first["items"][0]["outputUrl"])
+            self.assertIsNone(second["items"][1]["outputUrl"])
+            self.assertEqual(final["batchOutputUrl"], "/results/batch_2026-05-16.png")
+            self.assertEqual(final["items"][0]["outputUrl"], "/results/batch_2026-05-16.png")
+            self.assertEqual(final["items"][1]["outputUrl"], "/results/batch_2026-05-16.png")
+            self.assertEqual(final["items"][2]["outputUrl"], "/results/batch_2026-05-16.png")
 
     def test_refresh_captcha_replaces_existing_captcha_file(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

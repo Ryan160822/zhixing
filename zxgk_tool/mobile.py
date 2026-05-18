@@ -25,7 +25,7 @@ from .models import (
     STATUS_WAITING_CAPTCHA,
 )
 from .parser import parse_batch_lines
-from .renderer import render_result_png
+from .renderer import render_batch_result_png, render_result_png
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -42,6 +42,7 @@ class MobileJob:
     items: list[QueryItem]
     current_item: QueryItem | None = None
     current_captcha: CaptchaChallenge | None = None
+    batch_output_path: Path | None = None
     message: str = "准备就绪"
 
 
@@ -52,12 +53,14 @@ class MobileQueryService:
         output_dir: Path = RESULTS_DIR,
         captcha_dir: Path = CAPTCHA_DIR,
         render_result: Callable[[QueryItem, list[dict], Path, str], Path] = render_result_png,
+        render_batch_result: Callable[[list[QueryItem], Path, str], Path] = render_batch_result_png,
         today: Callable[[], str] = lambda: date.today().isoformat(),
     ) -> None:
         self.client_factory = client_factory
         self.output_dir = output_dir
         self.captcha_dir = captcha_dir
         self.render_result = render_result
+        self.render_batch_result = render_batch_result
         self.today = today
         self.jobs: dict[str, MobileJob] = {}
         self.lock = threading.Lock()
@@ -104,7 +107,10 @@ class MobileQueryService:
             job.message = result.error
             return self._job_to_dict(job)
 
-        output_path = self.render_result(item, result.rows, self.output_dir, self.today())
+        item.result_rows = result.rows
+        output_path = None
+        if not self._uses_batch_output(job):
+            output_path = self.render_result(item, result.rows, self.output_dir, self.today())
         item.status = STATUS_DONE
         item.output_path = output_path
         item.error = None
@@ -113,6 +119,7 @@ class MobileQueryService:
         job.current_captcha = None
         job.message = f"已完成：{item.name}"
         self._fetch_next_captcha(job)
+        self._finish_batch_output_if_ready(job)
         return self._job_to_dict(job)
 
     def refresh_captcha(self, job_id: str) -> dict:
@@ -177,6 +184,7 @@ class MobileQueryService:
             "message": job.message,
             "items": [self._item_to_dict(item) for item in job.items],
             "currentCaptcha": current_captcha,
+            "batchOutputUrl": f"/results/{job.batch_output_path.name}" if job.batch_output_path else None,
             "done": sum(1 for item in job.items if item.status == STATUS_DONE),
             "total": len(job.items),
         }
@@ -192,6 +200,20 @@ class MobileQueryService:
             "error": item.error,
             "outputUrl": output_url,
         }
+
+    def _uses_batch_output(self, job: MobileJob) -> bool:
+        return len(job.items) > 2
+
+    def _finish_batch_output_if_ready(self, job: MobileJob) -> None:
+        if not self._uses_batch_output(job) or job.batch_output_path:
+            return
+        if not job.items or any(item.status != STATUS_DONE for item in job.items):
+            return
+        out = self.render_batch_result(job.items, self.output_dir, self.today())
+        job.batch_output_path = out
+        for item in job.items:
+            item.output_path = out
+        job.message = f"队列已完成，已生成汇总 PNG：{out.name}"
 
     def _delete_captcha(self, captcha: CaptchaChallenge) -> None:
         try:
@@ -464,6 +486,7 @@ MOBILE_HTML = """<!doctype html>
   <div class="status-bar"><div class="status-inner" id="statusText">准备就绪</div></div>
   <script>
     let jobId = null;
+    let downloadedBatchUrl = null;
     const $ = (id) => document.getElementById(id);
     const statusText = $("statusText");
     const startBtn = $("startBtn");
@@ -513,7 +536,8 @@ MOBILE_HTML = """<!doctype html>
       job.items.forEach((item) => {
         const row = document.createElement("div");
         row.className = "row";
-        const output = item.outputUrl ? `<a class="result-link" href="${item.outputUrl}" target="_blank">打开 PNG</a>` : "";
+        const linkText = job.batchOutputUrl ? "下载汇总 PNG" : "打开 PNG";
+        const output = item.outputUrl ? `<a class="result-link" href="${item.outputUrl}" download target="_blank">${linkText}</a>` : "";
         row.innerHTML = `
           <div class="index">${item.index}</div>
           <div>
@@ -537,6 +561,20 @@ MOBILE_HTML = """<!doctype html>
         card.classList.remove("active");
         $("captchaImageBox").innerHTML = "";
       }
+      if (job.batchOutputUrl && !job.currentCaptcha && downloadedBatchUrl !== job.batchOutputUrl) {
+        downloadedBatchUrl = job.batchOutputUrl;
+        triggerDownload(job.batchOutputUrl);
+      }
+    }
+
+    function triggerDownload(url) {
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = "";
+      link.style.display = "none";
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
     }
 
     function escapeHtml(value) {

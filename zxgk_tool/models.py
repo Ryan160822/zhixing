@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 
@@ -23,3 +23,4 @@ class QueryItem:
     status: str = STATUS_PENDING
     output_path: Path | None = None
     error: str | None = None
+    result_rows: list[dict] = field(default_factory=list)

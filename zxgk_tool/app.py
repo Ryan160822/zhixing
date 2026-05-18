@@ -21,7 +21,7 @@ from .models import (
     STATUS_WAITING_CAPTCHA,
 )
 from .parser import parse_batch_lines
-from .renderer import render_result_png
+from .renderer import render_batch_result_png, render_result_png
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -41,6 +41,7 @@ class ZxgkApp(tk.Tk):
         self.items: list[QueryItem] = []
         self.current_item: QueryItem | None = None
         self.current_captcha: CaptchaChallenge | None = None
+        self.batch_output_path: Path | None = None
         self.captcha_photo: ImageTk.PhotoImage | None = None
         self.events: queue.Queue[tuple[str, object]] = queue.Queue()
         self.busy = False
@@ -172,6 +173,7 @@ class ZxgkApp(tk.Tk):
         self.items = parse_batch_lines(self.input_text.get("1.0", tk.END))
         self.current_item = None
         self.current_captcha = None
+        self.batch_output_path = None
         self._render_queue()
         if not self.items:
             self.status_var.set("没有可查询的内容")
@@ -187,9 +189,11 @@ class ZxgkApp(tk.Tk):
                 self.current_item = item
                 self._fetch_captcha_for(item)
                 return
+        self._finish_batch_output_if_ready()
         self.current_label_var.set("队列已完成")
         self.captcha_label.configure(image="", text="没有等待验证码的查询")
-        self.status_var.set("队列已完成")
+        if not self.batch_output_path:
+            self.status_var.set("队列已完成")
 
     def _fetch_captcha_for(self, item: QueryItem) -> None:
         self.busy = True
@@ -280,7 +284,10 @@ class ZxgkApp(tk.Tk):
             self.captcha_entry.focus_set()
             return
 
-        out = render_result_png(item, result.rows, RESULTS_DIR, date.today().isoformat())
+        item.result_rows = result.rows
+        out = None
+        if not self._uses_batch_output():
+            out = render_result_png(item, result.rows, RESULTS_DIR, date.today().isoformat())
         item.status = STATUS_DONE
         item.output_path = out
         item.error = None
@@ -330,6 +337,21 @@ class ZxgkApp(tk.Tk):
                 iid=str(item.index),
                 values=(item.index, kind, item.name, item.card_num, item.status, output),
             )
+
+    def _uses_batch_output(self) -> bool:
+        return len(self.items) > 2
+
+    def _finish_batch_output_if_ready(self) -> None:
+        if not self._uses_batch_output() or self.batch_output_path:
+            return
+        if not self.items or any(item.status != STATUS_DONE for item in self.items):
+            return
+        out = render_batch_result_png(self.items, RESULTS_DIR, date.today().isoformat())
+        self.batch_output_path = out
+        for item in self.items:
+            item.output_path = out
+        self._render_queue()
+        self.status_var.set(f"队列已完成，已生成汇总 PNG：{out}")
 
 
 def main() -> None:

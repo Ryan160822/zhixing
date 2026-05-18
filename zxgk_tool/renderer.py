@@ -41,6 +41,10 @@ def make_result_filename(item: QueryItem, date_text: str) -> str:
     return f"{safe_filename_part(item.name)}_被执行人查询结果_{date_text}.png"
 
 
+def make_batch_result_filename(date_text: str) -> str:
+    return f"批量被执行人查询结果_{date_text}.png"
+
+
 def next_available_path(directory: Path, filename: str) -> Path:
     directory.mkdir(parents=True, exist_ok=True)
     path = directory / filename
@@ -59,6 +63,12 @@ def next_available_path(directory: Path, filename: str) -> Path:
 
 def render_result_png(item: QueryItem, rows: list[dict], output_dir: Path, date_text: str) -> Path:
     out = next_available_path(output_dir, make_result_filename(item, date_text))
+    image = render_result_page_image(item, rows, date_text)
+    image.save(out, "PNG")
+    return out
+
+
+def render_result_page_image(item: QueryItem, rows: list[dict], date_text: str) -> Image.Image:
     image = Image.new("RGB", IMAGE_SIZE, "#eeeeee")
     draw = ImageDraw.Draw(image)
 
@@ -157,5 +167,19 @@ def render_result_png(item: QueryItem, rows: list[dict], output_dir: Path, date_
     draw.text((content_x + content_w - 32, meta_y), f"查询日期：{date_text}", anchor="ra", fill="#666666", font=f_small)
     draw.text((content_x, height - 70), "本图根据中国执行信息公开网本次查询返回结果生成。", fill="#777777", font=f_small)
 
+    return image
+
+
+def render_batch_result_png(items: list[QueryItem], output_dir: Path, date_text: str) -> Path:
+    out = next_available_path(output_dir, make_batch_result_filename(date_text))
+    if not items:
+        return render_result_png(QueryItem(1, "", "company", "未命名"), [], output_dir, date_text)
+
+    pages = [render_result_page_image(item, item.result_rows, date_text) for item in items]
+    width = IMAGE_SIZE[0]
+    height = IMAGE_SIZE[1] * len(pages)
+    image = Image.new("RGB", (width, height), "#eeeeee")
+    for index, page in enumerate(pages):
+        image.paste(page, (0, index * IMAGE_SIZE[1]))
     image.save(out, "PNG")
     return out
