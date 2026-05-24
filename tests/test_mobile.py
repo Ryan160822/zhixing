@@ -71,7 +71,7 @@ class MobileQueryServiceTest(unittest.TestCase):
             self.assertEqual(job["items"][0]["status"], STATUS_WAITING_CAPTCHA)
             self.assertTrue(job["currentCaptcha"]["imageUrl"].startswith("/captcha/"))
 
-    def test_submit_captcha_generates_result_and_advances_to_next_item(self) -> None:
+    def test_submit_captcha_reuses_code_for_remaining_items(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             service = MobileQueryService(
                 client_factory=FakeClient,
@@ -86,10 +86,11 @@ class MobileQueryServiceTest(unittest.TestCase):
             job = service.submit_captcha(started["id"], "ABCD")
 
             self.assertEqual(job["items"][0]["status"], STATUS_DONE)
+            self.assertEqual(job["items"][1]["status"], STATUS_DONE)
             self.assertTrue(job["items"][0]["outputUrl"].startswith("/results/"))
+            self.assertTrue(job["items"][1]["outputUrl"].startswith("/results/"))
             self.assertFalse(old_captcha.exists())
-            self.assertEqual(job["items"][1]["status"], STATUS_WAITING_CAPTCHA)
-            self.assertEqual(job["currentCaptcha"]["itemIndex"], 2)
+            self.assertIsNone(job["currentCaptcha"])
 
     def test_more_than_two_items_generate_one_batch_png_after_all_complete(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -107,12 +108,8 @@ class MobileQueryServiceTest(unittest.TestCase):
                 "某某建设有限公司"
             )
 
-            first = service.submit_captcha(started["id"], "ABCD")
-            second = service.submit_captcha(first["id"], "ABCD")
-            final = service.submit_captcha(second["id"], "ABCD")
+            final = service.submit_captcha(started["id"], "ABCD")
 
-            self.assertIsNone(first["items"][0]["outputUrl"])
-            self.assertIsNone(second["items"][1]["outputUrl"])
             self.assertEqual(final["batchOutputUrl"], "/results/batch_2026-05-16.png")
             self.assertEqual(final["items"][0]["outputUrl"], "/results/batch_2026-05-16.png")
             self.assertEqual(final["items"][1]["outputUrl"], "/results/batch_2026-05-16.png")

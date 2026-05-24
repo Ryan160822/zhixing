@@ -89,37 +89,40 @@ class MobileQueryService:
             job.message = "当前没有等待验证码的查询"
             return self._job_to_dict(job)
 
-        item = job.current_item
         captcha = job.current_captcha
-        item.status = STATUS_QUERYING
-        job.message = f"正在查询：{item.name}"
-        try:
-            result = job.client.search(item, captcha, code)
-        except Exception as exc:
-            item.status = STATUS_FAILED
-            item.error = str(exc)
-            job.message = str(exc)
-            return self._job_to_dict(job)
+        while job.current_item:
+            item = job.current_item
+            item.status = STATUS_QUERYING
+            job.message = f"正在查询：{item.name}"
+            try:
+                result = job.client.search(item, captcha, code)
+            except Exception as exc:
+                item.status = STATUS_FAILED
+                item.error = str(exc)
+                job.message = str(exc)
+                return self._job_to_dict(job)
 
-        if result.error:
-            item.status = STATUS_CAPTCHA_ERROR
-            item.error = result.error
-            job.message = result.error
-            return self._job_to_dict(job)
+            if result.error:
+                item.status = STATUS_CAPTCHA_ERROR
+                item.error = result.error
+                job.message = result.error
+                return self._job_to_dict(job)
 
-        item.result_rows = result.rows
-        output_path = None
-        if not self._uses_batch_output(job):
-            output_path = self.render_result(item, result.rows, self.output_dir, self.today())
-        item.status = STATUS_DONE
-        item.output_path = output_path
-        item.error = None
+            item.result_rows = result.rows
+            output_path = None
+            if not self._uses_batch_output(job):
+                output_path = self.render_result(item, result.rows, self.output_dir, self.today())
+            item.status = STATUS_DONE
+            item.output_path = output_path
+            item.error = None
+            job.current_item = self._next_pending_item(job)
+            job.message = f"已完成：{item.name}"
+
         self._delete_captcha(captcha)
-        job.current_item = None
         job.current_captcha = None
-        job.message = f"已完成：{item.name}"
-        self._fetch_next_captcha(job)
         self._finish_batch_output_if_ready(job)
+        if not job.batch_output_path:
+            job.message = "队列已完成"
         return self._job_to_dict(job)
 
     def refresh_captcha(self, job_id: str) -> dict:
@@ -145,14 +148,20 @@ class MobileQueryService:
             raise KeyError("没有找到这次查询，请重新开始") from exc
 
     def _fetch_next_captcha(self, job: MobileJob) -> None:
-        for item in job.items:
-            if item.status == STATUS_PENDING:
-                self._fetch_captcha_for(job, item)
-                return
+        item = self._next_pending_item(job)
+        if item:
+            self._fetch_captcha_for(job, item)
+            return
         job.current_item = None
         job.current_captcha = None
         if any(item.status == STATUS_DONE for item in job.items):
             job.message = "队列已完成"
+
+    def _next_pending_item(self, job: MobileJob) -> QueryItem | None:
+        for item in job.items:
+            if item.status == STATUS_PENDING:
+                return item
+        return None
 
     def _fetch_captcha_for(self, job: MobileJob, item: QueryItem) -> None:
         item.status = STATUS_QUERYING
@@ -473,7 +482,7 @@ MOBILE_HTML = """<!doctype html>
         <div class="captcha-image" id="captchaImageBox"></div>
         <input id="captchaCode" autocomplete="off" autocapitalize="characters" placeholder="输入验证码">
         <div class="actions">
-          <button id="submitBtn">提交本条</button>
+          <button id="submitBtn">提交并继续</button>
           <button class="secondary" id="refreshBtn">换验证码</button>
         </div>
       </section>
