@@ -8,6 +8,7 @@ from pathlib import Path
 from urllib.parse import urljoin
 
 warnings.filterwarnings("ignore", message="urllib3 v2 only supports OpenSSL.*")
+import ddddocr
 import requests
 
 from .models import QueryItem
@@ -64,6 +65,7 @@ class CourtClient:
                 )
             }
         )
+        self._ocr = ddddocr.DdddOcr(show_ad=False)
 
     def fetch_captcha(self, captcha_dir: Path, label: str) -> CaptchaChallenge:
         response = self.session.get(BASE_URL, timeout=30)
@@ -79,6 +81,10 @@ class CourtClient:
         image_response.raise_for_status()
         image_path.write_bytes(image_response.content)
         return CaptchaChallenge(captcha_id, image_path)
+
+    def solve_captcha(self, image_path: Path) -> str:
+        """用 OCR 自动识别验证码图片，返回识别结果"""
+        return self._ocr.classification(image_path.read_bytes()).strip()
 
     def search(self, item: QueryItem, captcha: CaptchaChallenge, code: str) -> SearchResult:
         data = {

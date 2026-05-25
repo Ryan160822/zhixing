@@ -28,6 +28,9 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 RESULTS_DIR = PROJECT_ROOT / "results"
 CAPTCHA_DIR = PROJECT_ROOT / ".runtime" / "captchas"
 
+# 验证码识别失败时最多自动重试次数
+MAX_CAPTCHA_RETRIES = 5
+
 
 class ZxgkApp(tk.Tk):
     def __init__(self) -> None:
@@ -45,6 +48,8 @@ class ZxgkApp(tk.Tk):
         self.captcha_photo: ImageTk.PhotoImage | None = None
         self.events: queue.Queue[tuple[str, object]] = queue.Queue()
         self.busy = False
+        # 记录每条查询的当前重试次数
+        self._retry_counts: dict[int, int] = {}
 
         self._build_ui()
         self.bind("<Command-r>", lambda _event: self.refresh_captcha())
@@ -75,7 +80,7 @@ class ZxgkApp(tk.Tk):
         notice.columnconfigure(0, weight=1)
         tk.Label(
             notice,
-            text="粘贴名单后自动识别个人/企业；验证码人工输入，其余自动完成。",
+            text="粘贴名单后自动识别个人/企业；验证码自动识别，全程无需人工干预。",
             bg="#1d5d8f",
             fg="#ffffff",
             font=("PingFang SC", 13, "bold"),
@@ -122,22 +127,24 @@ class ZxgkApp(tk.Tk):
         self.start_button.grid(row=0, column=0, sticky="ew", padx=(0, 6))
         ttk.Button(buttons, text="清空", command=self.clear_input).grid(row=0, column=1, sticky="ew", padx=(6, 0))
 
-        captcha_box = ttk.LabelFrame(left, text="验证码", padding=10)
+        # 验证码预览区（只读，仅供监控）
+        captcha_box = ttk.LabelFrame(left, text="验证码（自动识别）", padding=10)
         captcha_box.grid(row=3, column=0, sticky="ew", pady=(16, 0))
         captcha_box.columnconfigure(0, weight=1)
-        self.current_label_var = tk.StringVar(value="当前没有等待验证码的查询")
+        self.current_label_var = tk.StringVar(value="当前没有正在查询的项目")
         ttk.Label(captcha_box, textvariable=self.current_label_var).grid(row=0, column=0, sticky="w")
         self.captcha_label = ttk.Label(captcha_box, text="验证码会显示在这里", anchor="center")
         self.captcha_label.grid(row=1, column=0, sticky="ew", pady=10)
-        self.captcha_entry = ttk.Entry(captcha_box, font=("Menlo", 18))
-        self.captcha_entry.grid(row=2, column=0, sticky="ew")
-        self.captcha_entry.bind("<Return>", lambda _event: self.submit_captcha())
-        captcha_actions = ttk.Frame(captcha_box)
-        captcha_actions.grid(row=3, column=0, sticky="ew", pady=(10, 0))
-        captcha_actions.columnconfigure(0, weight=1)
-        captcha_actions.columnconfigure(1, weight=1)
-        ttk.Button(captcha_actions, text="提交本条 (Enter)", command=self.submit_captcha).grid(row=0, column=0, sticky="ew", padx=(0, 6))
-        ttk.Button(captcha_actions, text="换验证码 (Cmd+R)", command=self.refresh_captcha).grid(row=0, column=1, sticky="ew", padx=(6, 0))
+        # 识别结果展示（只读）
+        result_row = ttk.Frame(captcha_box)
+        result_row.grid(row=2, column=0, sticky="ew")
+        ttk.Label(result_row, text="识别结果：").pack(side="left")
+        self.captcha_entry = ttk.Entry(result_row, font=("Menlo", 18), state="readonly")
+        self.captcha_entry.pack(side="left", fill="x", expand=True)
+        # 重试按钮保留，供手动触发
+        ttk.Button(captcha_box, text="手动换一张重试", command=self.refresh_captcha).grid(
+            row=3, column=0, sticky="ew", pady=(10, 0)
+        )
 
         right.rowconfigure(1, weight=1)
         right.columnconfigure(0, weight=1)
@@ -174,6 +181,7 @@ class ZxgkApp(tk.Tk):
         self.current_item = None
         self.current_captcha = None
         self.batch_output_path = None
+        self._retry_counts.clear()
         self._render_queue()
         if not self.items:
             self.status_var.set("没有可查询的内容")
@@ -191,7 +199,7 @@ class ZxgkApp(tk.Tk):
                 return
         self._finish_batch_output_if_ready()
         self.current_label_var.set("队列已完成")
-        self.captcha_label.configure(image="", text="没有等待验证码的查询")
+        self.captcha_label.configure(image="", text="全部查询完成")
         if not self.batch_output_path:
             self.status_var.set("队列已完成")
 
@@ -199,7 +207,9 @@ class ZxgkApp(tk.Tk):
         self.busy = True
         item.status = STATUS_QUERYING
         self._render_queue()
-        self.status_var.set(f"正在获取验证码：{item.name}")
+        retry = self._retry_counts.get(item.index, 0)
+        retry_tip = f"（第 {retry} 次重试）" if retry > 0 else ""
+        self.status_var.set(f"正在获取验证码：{item.name}{retry_tip}")
         threading.Thread(target=self._fetch_captcha_worker, args=(item,), daemon=True).start()
 
     def _fetch_captcha_worker(self, item: QueryItem) -> None:
@@ -209,33 +219,8 @@ class ZxgkApp(tk.Tk):
         except Exception as exc:
             self.events.put(("error", (item, str(exc))))
 
-    def submit_captcha(self) -> None:
-        if self.busy:
-            return
-        if not self.current_item or not self.current_captcha:
-            self.status_var.set("当前没有可提交的验证码")
-            return
-        code = self.captcha_entry.get().strip()
-        if not code:
-            self.status_var.set("请输入验证码")
-            self.captcha_entry.focus_set()
-            return
-        item = self.current_item
-        captcha = self.current_captcha
-        self.busy = True
-        item.status = STATUS_QUERYING
-        self._render_queue()
-        self.status_var.set(f"正在查询：{item.name}")
-        threading.Thread(target=self._submit_worker, args=(item, captcha, code), daemon=True).start()
-
-    def _submit_worker(self, item: QueryItem, captcha: CaptchaChallenge, code: str) -> None:
-        try:
-            result = self.client.search(item, captcha, code)
-            self.events.put(("search_done", (item, captcha, result)))
-        except Exception as exc:
-            self.events.put(("error", (item, str(exc))))
-
     def refresh_captcha(self) -> None:
+        """手动触发重新获取验证码"""
         if self.busy:
             return
         if not self.current_item:
@@ -262,28 +247,73 @@ class ZxgkApp(tk.Tk):
         self.after(100, self._process_events)
 
     def _handle_captcha_ready(self, item: QueryItem, challenge: CaptchaChallenge) -> None:
-        self.busy = False
-        item.status = STATUS_WAITING_CAPTCHA
+        """验证码图片已下载 → 自动 OCR 识别 → 直接提交，无需人工干预"""
         self.current_item = item
         self.current_captcha = challenge
         self.current_label_var.set(f"当前：{item.name}")
         self._show_captcha(challenge.image_path)
-        self.captcha_entry.delete(0, tk.END)
-        self.captcha_entry.focus_set()
-        self.status_var.set("请输入验证码，按 Enter 提交")
+        self.status_var.set(f"正在自动识别验证码：{item.name}")
         self._render_queue()
+
+        # 自动 OCR 识别
+        try:
+            code = self.client.solve_captcha(challenge.image_path)
+        except Exception as exc:
+            self.busy = False
+            self._handle_error(item, f"验证码 OCR 识别失败：{exc}")
+            return
+
+        # 把识别结果显示在输入框（只读，供监控）
+        self.captcha_entry.configure(state="normal")
+        self.captcha_entry.delete(0, tk.END)
+        self.captcha_entry.insert(0, code)
+        self.captcha_entry.configure(state="readonly")
+
+        # 直接提交，不等用户操作
+        item.status = STATUS_QUERYING
+        self.busy = True
+        self._render_queue()
+        self.status_var.set(f"正在查询：{item.name}（识别码：{code}）")
+        threading.Thread(
+            target=self._submit_worker, args=(item, challenge, code), daemon=True
+        ).start()
+
+    def _submit_worker(self, item: QueryItem, captcha: CaptchaChallenge, code: str) -> None:
+        try:
+            result = self.client.search(item, captcha, code)
+            self.events.put(("search_done", (item, captcha, result)))
+        except Exception as exc:
+            self.events.put(("error", (item, str(exc))))
 
     def _handle_search_done(self, item: QueryItem, captcha: CaptchaChallenge, result) -> None:
         self.busy = False
+
         if result.error:
-            item.status = STATUS_CAPTCHA_ERROR
-            item.error = result.error
-            self.status_var.set(result.error)
-            self._render_queue()
-            self.captcha_entry.delete(0, tk.END)
-            self.captcha_entry.focus_set()
+            # 验证码识别错误 → 自动重试，不提示用户
+            retries = self._retry_counts.get(item.index, 0) + 1
+            self._retry_counts[item.index] = retries
+
+            if retries <= MAX_CAPTCHA_RETRIES:
+                item.status = STATUS_PENDING
+                item.error = f"验证码错误，第 {retries} 次重试"
+                self._render_queue()
+                self.status_var.set(f"{item.name}：验证码错误，自动重试（{retries}/{MAX_CAPTCHA_RETRIES}）")
+                self._delete_captcha(captcha)
+                self._fetch_captcha_for(item)
+            else:
+                # 超过最大重试次数，标记失败，继续下一条
+                item.status = STATUS_FAILED
+                item.error = f"验证码连续失败 {MAX_CAPTCHA_RETRIES} 次，已跳过"
+                self._delete_captcha(captcha)
+                self.current_item = None
+                self.current_captcha = None
+                self._render_queue()
+                self.status_var.set(f"{item.name}：超过最大重试次数，已跳过")
+                self._advance_queue()
             return
 
+        # 查询成功
+        self._retry_counts.pop(item.index, None)
         item.result_rows = result.rows
         out = None
         if not self._uses_batch_output():
@@ -294,7 +324,9 @@ class ZxgkApp(tk.Tk):
         self._delete_captcha(captcha)
         self.current_item = None
         self.current_captcha = None
+        self.captcha_entry.configure(state="normal")
         self.captcha_entry.delete(0, tk.END)
+        self.captcha_entry.configure(state="readonly")
         self._render_queue()
         self.status_var.set(f"已完成：{item.name}")
         self._advance_queue()
