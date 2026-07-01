@@ -16,6 +16,21 @@ def clean_captcha_text(raw: str | None) -> str:
     return _ALNUM.sub("", raw or "")
 
 
+def should_auto_attempt(auto_enabled: bool, attempts: int, max_attempts: int = MAX_AUTO_ATTEMPTS) -> bool:
+    return auto_enabled and attempts < max_attempts
+
+
+def decide_captcha_action(
+    auto_enabled: bool,
+    predicted: str | None,
+    attempts: int,
+    max_attempts: int = MAX_AUTO_ATTEMPTS,
+) -> str:
+    if should_auto_attempt(auto_enabled, attempts, max_attempts) and predicted:
+        return AUTO_SUBMIT
+    return MANUAL
+
+
 def _default_classifier():
     import ddddocr  # 仅在打包态/装了 ddddocr 时可用
 
