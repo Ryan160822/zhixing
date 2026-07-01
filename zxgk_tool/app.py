@@ -53,7 +53,6 @@ class ZxgkApp(tk.Tk):
         self.auto_var = tk.BooleanVar(value=True)
         self.auto_attempts = 0
         self.output_paths: list[Path] = []
-        self.current_predicted: str | None = None
 
         self._build_ui()
         self.bind("<Command-r>", lambda _event: self.refresh_captcha())
@@ -216,13 +215,14 @@ class ZxgkApp(tk.Tk):
         item.status = STATUS_QUERYING
         self._render_queue()
         self.status_var.set(f"正在获取验证码：{item.name}")
-        threading.Thread(target=self._fetch_captcha_worker, args=(item,), daemon=True).start()
+        auto_enabled = self.auto_var.get()
+        threading.Thread(target=self._fetch_captcha_worker, args=(item, auto_enabled), daemon=True).start()
 
-    def _fetch_captcha_worker(self, item: QueryItem) -> None:
+    def _fetch_captcha_worker(self, item: QueryItem, auto_enabled: bool) -> None:
         try:
             challenge = self.client.fetch_captcha(paths.captcha_dir(), item.name)
             predicted = None
-            if self.auto_var.get():
+            if auto_enabled:
                 try:
                     predicted = self.solver.predict(challenge.image_path)
                 except Exception:
@@ -291,7 +291,6 @@ class ZxgkApp(tk.Tk):
         item.status = STATUS_WAITING_CAPTCHA
         self.current_item = item
         self.current_captcha = challenge
-        self.current_predicted = predicted
         self.current_label_var.set(f"当前：{item.name}")
         self._show_captcha(challenge.image_path)
         self.captcha_entry.delete(0, tk.END)
@@ -354,6 +353,7 @@ class ZxgkApp(tk.Tk):
 
     def _handle_error(self, item: QueryItem, message: str) -> None:
         self.busy = False
+        self.auto_attempts = 0
         item.status = STATUS_FAILED
         item.error = message
         self.status_var.set(f"{item.name} 查询失败：{message}")

@@ -183,6 +183,30 @@ class AutoSolveTest(unittest.TestCase):
             self.assertTrue(app.captcha_entry.focused)
             self.assertTrue(cap_path.exists())
 
+    def test_auto_submit_increments_attempts(self) -> None:
+        app, items = self.make_app(auto=True, attempts=2)
+        submitted = []
+        app._show_captcha = lambda path: None
+        app._submit_with_captcha = lambda item, cap, code: submitted.append((item, code))
+        with tempfile.TemporaryDirectory() as d:
+            cap_path = Path(d) / "c.png"
+            cap_path.write_bytes(b"x")
+            captcha = CaptchaChallenge("c1", cap_path)
+            app._handle_captcha_ready(items[0], captcha, "ab12")
+            self.assertEqual(app.auto_attempts, 3)
+            self.assertEqual(submitted, [(items[0], "ab12")])
+
+    def test_success_resets_auto_attempts(self) -> None:
+        app, items = self.make_app(auto=True, attempts=4)
+        with tempfile.TemporaryDirectory() as d:
+            cap_path = Path(d) / "c.png"
+            cap_path.write_bytes(b"x")
+            captcha = CaptchaChallenge("c1", cap_path)
+            app.current_captcha = captcha
+            with patch("zxgk_tool.app.render_result_png", return_value=Path(d) / "r.png"):
+                app._handle_search_done(items[0], captcha, SearchResult([], 0), "ab12")
+            self.assertEqual(app.auto_attempts, 0)
+
 
 if __name__ == "__main__":
     unittest.main()
