@@ -25,3 +25,8 @@ __pycache__/
 
 # Python virtual environment
 .venv/
+
+# macOS app build artifacts
+.venv-build/
+build/
+dist/
