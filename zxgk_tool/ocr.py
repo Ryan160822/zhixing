@@ -12,7 +12,7 @@ MANUAL = "manual"
 _ALNUM = re.compile(r"[^A-Za-z0-9]")
 
 
-def clean_captcha_text(raw: str) -> str:
+def clean_captcha_text(raw: str | None) -> str:
     return _ALNUM.sub("", raw or "")
 
 
@@ -27,7 +27,7 @@ class CaptchaSolver:
         self._factory = classifier_factory or _default_classifier
         self._classifier = None
 
-    def _get(self):
+    def _get(self) -> object:
         if self._classifier is None:
             self._classifier = self._factory()
         return self._classifier

@@ -48,6 +48,7 @@ class CaptchaSolverTest(unittest.TestCase):
             img = Path(d) / "c.png"
             img.write_bytes(b"bytes")
             solver.predict(img)
+            solver.predict(img)
         self.assertEqual(created, [1])
 
 
