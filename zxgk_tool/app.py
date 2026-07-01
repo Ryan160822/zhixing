@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 import queue
+import shutil
 import threading
 from datetime import date
 from pathlib import Path
 import tkinter as tk
-from tkinter import messagebox, ttk
+from tkinter import filedialog, messagebox, ttk
 
 from PIL import Image, ImageTk
 
@@ -21,12 +22,15 @@ from .models import (
     STATUS_WAITING_CAPTCHA,
 )
 from .parser import parse_batch_lines
+from . import paths
+from .ocr import (
+    AUTO_SUBMIT,
+    MAX_AUTO_ATTEMPTS,
+    CaptchaSolver,
+    decide_captcha_action,
+    should_auto_attempt,
+)
 from .renderer import render_batch_result_png, render_result_png
-
-
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
-RESULTS_DIR = PROJECT_ROOT / "results"
-CAPTCHA_DIR = PROJECT_ROOT / ".runtime" / "captchas"
 
 
 class ZxgkApp(tk.Tk):
@@ -45,6 +49,11 @@ class ZxgkApp(tk.Tk):
         self.captcha_photo: ImageTk.PhotoImage | None = None
         self.events: queue.Queue[tuple[str, object]] = queue.Queue()
         self.busy = False
+        self.solver = CaptchaSolver()
+        self.auto_var = tk.BooleanVar(value=True)
+        self.auto_attempts = 0
+        self.output_paths: list[Path] = []
+        self.current_predicted: str | None = None
 
         self._build_ui()
         self.bind("<Command-r>", lambda _event: self.refresh_captcha())
@@ -138,6 +147,8 @@ class ZxgkApp(tk.Tk):
         captcha_actions.columnconfigure(1, weight=1)
         ttk.Button(captcha_actions, text="提交本条 (Enter)", command=self.submit_captcha).grid(row=0, column=0, sticky="ew", padx=(0, 6))
         ttk.Button(captcha_actions, text="换验证码 (Cmd+R)", command=self.refresh_captcha).grid(row=0, column=1, sticky="ew", padx=(6, 0))
+        self.auto_check = ttk.Checkbutton(captcha_box, text="自动识别验证码", variable=self.auto_var)
+        self.auto_check.grid(row=4, column=0, sticky="w", pady=(8, 0))
 
         right.rowconfigure(1, weight=1)
         right.columnconfigure(0, weight=1)
@@ -160,6 +171,8 @@ class ZxgkApp(tk.Tk):
 
         self.status_var = tk.StringVar(value="准备就绪")
         ttk.Label(right, textvariable=self.status_var, style="Status.TLabel").grid(row=2, column=0, sticky="ew")
+        self.save_button = ttk.Button(right, text="保存结果", command=self.save_results, state="disabled")
+        self.save_button.grid(row=3, column=0, sticky="w", pady=(8, 0))
 
     def clear_input(self) -> None:
         if self.busy:
@@ -174,6 +187,9 @@ class ZxgkApp(tk.Tk):
         self.current_item = None
         self.current_captcha = None
         self.batch_output_path = None
+        self.auto_attempts = 0
+        self.output_paths = []
+        self._update_save_button()
         self._render_queue()
         if not self.items:
             self.status_var.set("没有可查询的内容")
@@ -204,8 +220,14 @@ class ZxgkApp(tk.Tk):
 
     def _fetch_captcha_worker(self, item: QueryItem) -> None:
         try:
-            challenge = self.client.fetch_captcha(CAPTCHA_DIR, item.name)
-            self.events.put(("captcha_ready", (item, challenge)))
+            challenge = self.client.fetch_captcha(paths.captcha_dir(), item.name)
+            predicted = None
+            if self.auto_var.get():
+                try:
+                    predicted = self.solver.predict(challenge.image_path)
+                except Exception:
+                    predicted = None
+            self.events.put(("captcha_ready", (item, challenge, predicted)))
         except Exception as exc:
             self.events.put(("error", (item, str(exc))))
 
@@ -252,8 +274,8 @@ class ZxgkApp(tk.Tk):
             while True:
                 event, payload = self.events.get_nowait()
                 if event == "captcha_ready":
-                    item, challenge = payload
-                    self._handle_captcha_ready(item, challenge)
+                    item, challenge, predicted = payload
+                    self._handle_captcha_ready(item, challenge, predicted)
                 elif event == "search_done":
                     item, captcha, result, code = payload
                     self._handle_search_done(item, captcha, result, code)
@@ -264,17 +286,25 @@ class ZxgkApp(tk.Tk):
             pass
         self.after(100, self._process_events)
 
-    def _handle_captcha_ready(self, item: QueryItem, challenge: CaptchaChallenge) -> None:
+    def _handle_captcha_ready(self, item: QueryItem, challenge: CaptchaChallenge, predicted: str | None) -> None:
         self.busy = False
         item.status = STATUS_WAITING_CAPTCHA
         self.current_item = item
         self.current_captcha = challenge
+        self.current_predicted = predicted
         self.current_label_var.set(f"当前：{item.name}")
         self._show_captcha(challenge.image_path)
         self.captcha_entry.delete(0, tk.END)
+        self._render_queue()
+
+        if decide_captcha_action(self.auto_var.get(), predicted, self.auto_attempts) == AUTO_SUBMIT:
+            self.auto_attempts += 1
+            self.status_var.set(f"自动识别验证码（第 {self.auto_attempts} 次）：{predicted}")
+            self._submit_with_captcha(item, challenge, predicted)
+            return
+
         self.captcha_entry.focus_set()
         self.status_var.set("请输入验证码，按 Enter 提交")
-        self._render_queue()
 
     def _handle_search_done(self, item: QueryItem, captcha: CaptchaChallenge, result, code: str) -> None:
         self.busy = False
@@ -283,16 +313,25 @@ class ZxgkApp(tk.Tk):
             item.error = result.error
             self.current_item = item
             self.current_captcha = captcha
-            self.status_var.set(result.error)
             self._render_queue()
             self.captcha_entry.delete(0, tk.END)
+            if should_auto_attempt(self.auto_var.get(), self.auto_attempts):
+                self.status_var.set(f"验证码识别错误，自动换一张重试（已 {self.auto_attempts} 次）")
+                self._delete_captcha(captcha)
+                self.current_captcha = None
+                self._fetch_captcha_for(item)
+                return
+            self.status_var.set(result.error)
             self.captcha_entry.focus_set()
             return
 
         item.result_rows = result.rows
         out = None
         if not self._uses_batch_output():
-            out = render_result_png(item, result.rows, RESULTS_DIR, date.today().isoformat())
+            out = render_result_png(item, result.rows, paths.temp_results_dir(), date.today().isoformat())
+            self.output_paths.append(out)
+            self._update_save_button()
+        self.auto_attempts = 0
         item.status = STATUS_DONE
         item.output_path = out
         item.error = None
@@ -366,12 +405,41 @@ class ZxgkApp(tk.Tk):
             return
         if not self.items or any(item.status != STATUS_DONE for item in self.items):
             return
-        out = render_batch_result_png(self.items, RESULTS_DIR, date.today().isoformat())
+        out = render_batch_result_png(self.items, paths.temp_results_dir(), date.today().isoformat())
         self.batch_output_path = out
+        self.output_paths = [out]
+        self._update_save_button()
         for item in self.items:
             item.output_path = out
         self._render_queue()
         self.status_var.set(f"队列已完成，已生成汇总 PNG：{out}")
+
+    def _update_save_button(self) -> None:
+        self.save_button.configure(state="normal" if self.output_paths else "disabled")
+
+    def save_results(self) -> None:
+        if not self.output_paths:
+            messagebox.showinfo("没有结果", "还没有可保存的结果。")
+            return
+        if len(self.output_paths) == 1:
+            src = self.output_paths[0]
+            dest = filedialog.asksaveasfilename(
+                title="保存结果",
+                defaultextension=".png",
+                initialfile=src.name,
+                filetypes=[("PNG 图片", "*.png")],
+            )
+            if not dest:
+                return
+            shutil.copyfile(src, dest)
+            self.status_var.set(f"已保存：{dest}")
+            return
+        folder = filedialog.askdirectory(title="选择保存文件夹")
+        if not folder:
+            return
+        for src in self.output_paths:
+            shutil.copyfile(src, Path(folder) / src.name)
+        self.status_var.set(f"已保存 {len(self.output_paths)} 个文件到：{folder}")
 
 
 def main() -> None:

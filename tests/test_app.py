@@ -10,6 +10,17 @@ from zxgk_tool.client import CaptchaChallenge, SearchResult
 from zxgk_tool.models import QueryItem, STATUS_CAPTCHA_ERROR, STATUS_DONE, STATUS_PENDING
 
 
+class DummyBoolVar:
+    def __init__(self, value: bool = False) -> None:
+        self.value = value
+
+    def get(self) -> bool:
+        return self.value
+
+    def set(self, value: bool) -> None:
+        self.value = value
+
+
 class DummyVar:
     def __init__(self) -> None:
         self.value = ""
@@ -36,18 +47,24 @@ class DummyLabel:
 
 
 class DesktopCaptchaReuseTest(unittest.TestCase):
-    def make_app(self, items: list[QueryItem]) -> ZxgkApp:
+    def make_app(self, items: list[QueryItem], auto: bool = False) -> ZxgkApp:
         app = ZxgkApp.__new__(ZxgkApp)
         app.items = items
         app.current_item = items[0]
         app.current_captcha = None
+        app.current_predicted = None
         app.batch_output_path = None
         app.busy = True
+        app.auto_var = DummyBoolVar(auto)
+        app.auto_attempts = 0
+        app.output_paths = []
         app.status_var = DummyVar()
         app.current_label_var = DummyVar()
         app.captcha_entry = DummyEntry()
         app.captcha_label = DummyLabel()
+        app.save_button = DummyLabel()
         app._render_queue = lambda: None
+        app._update_save_button = lambda: None
         return app
 
     def test_successful_submit_reuses_captcha_and_code_for_next_pending_item(self) -> None:
@@ -116,6 +133,55 @@ class DesktopCaptchaReuseTest(unittest.TestCase):
             self.assertEqual(app.current_item, items[0])
             self.assertEqual(app.current_captcha, captcha)
             self.assertTrue(captcha_path.exists())
+
+
+class AutoSolveTest(unittest.TestCase):
+    def make_app(self, auto: bool, attempts: int):
+        app = ZxgkApp.__new__(ZxgkApp)
+        items = [QueryItem(1, "x", "company", "某公司")]
+        app.items = items
+        app.current_item = items[0]
+        app.current_captcha = None
+        app.current_predicted = "ab12"
+        app.batch_output_path = None
+        app.busy = True
+        app.auto_var = DummyBoolVar(auto)
+        app.auto_attempts = attempts
+        app.output_paths = []
+        app.status_var = DummyVar()
+        app.current_label_var = DummyVar()
+        app.captcha_entry = DummyEntry()
+        app.captcha_label = DummyLabel()
+        app.save_button = DummyLabel()
+        app._render_queue = lambda: None
+        app._update_save_button = lambda: None
+        return app, items
+
+    def test_auto_error_refetches_new_captcha(self) -> None:
+        app, items = self.make_app(auto=True, attempts=2)
+        fetched = []
+        app._fetch_captcha_for = lambda item: fetched.append(item)
+        with tempfile.TemporaryDirectory() as d:
+            cap_path = Path(d) / "c.png"
+            cap_path.write_bytes(b"x")
+            captcha = CaptchaChallenge("c1", cap_path)
+            app.current_captcha = captcha
+            app._handle_search_done(items[0], captcha, SearchResult([], 0, "验证码错误或已过期"), "ab12")
+            self.assertEqual(fetched, [items[0]])
+            self.assertIsNone(app.current_captcha)
+            self.assertFalse(cap_path.exists())
+
+    def test_auto_error_falls_back_to_manual_after_max(self) -> None:
+        app, items = self.make_app(auto=True, attempts=5)
+        app._fetch_captcha_for = lambda item: self.fail("should not refetch after max")
+        with tempfile.TemporaryDirectory() as d:
+            cap_path = Path(d) / "c.png"
+            cap_path.write_bytes(b"x")
+            captcha = CaptchaChallenge("c1", cap_path)
+            app.current_captcha = captcha
+            app._handle_search_done(items[0], captcha, SearchResult([], 0, "验证码错误或已过期"), "ab12")
+            self.assertTrue(app.captcha_entry.focused)
+            self.assertTrue(cap_path.exists())
 
 
 if __name__ == "__main__":
