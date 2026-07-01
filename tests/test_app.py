@@ -52,7 +52,6 @@ class DesktopCaptchaReuseTest(unittest.TestCase):
         app.items = items
         app.current_item = items[0]
         app.current_captcha = None
-        app.current_predicted = None
         app.batch_output_path = None
         app.busy = True
         app.auto_var = DummyBoolVar(auto)
@@ -142,7 +141,6 @@ class AutoSolveTest(unittest.TestCase):
         app.items = items
         app.current_item = items[0]
         app.current_captcha = None
-        app.current_predicted = "ab12"
         app.batch_output_path = None
         app.busy = True
         app.auto_var = DummyBoolVar(auto)
