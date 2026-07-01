@@ -66,7 +66,13 @@ APP 默认在本地自动识别验证码（使用 ddddocr）。识别错误时�
 
 ## 打包成 macOS APP
 
-打包需要 Python 3.12（`brew install python@3.12`），然后运行：
+打包需要 Python 3.12 及其 tkinter 支持：
+
+```bash
+brew install python@3.12 python-tk@3.12
+```
+
+然后运行：
 
 ```bash
 ./build_app.sh
