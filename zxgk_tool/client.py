@@ -56,6 +56,7 @@ def parse_search_response(body: str) -> SearchResult:
 class CourtClient:
     def __init__(self) -> None:
         self.session = requests.Session()
+        self.session.trust_env = False
         self.session.headers.update(
             {
                 "User-Agent": (

@@ -222,6 +222,9 @@ class ZxgkApp(tk.Tk):
             return
         item = self.current_item
         captcha = self.current_captcha
+        self._submit_with_captcha(item, captcha, code)
+
+    def _submit_with_captcha(self, item: QueryItem, captcha: CaptchaChallenge, code: str) -> None:
         self.busy = True
         item.status = STATUS_QUERYING
         self._render_queue()
@@ -231,7 +234,7 @@ class ZxgkApp(tk.Tk):
     def _submit_worker(self, item: QueryItem, captcha: CaptchaChallenge, code: str) -> None:
         try:
             result = self.client.search(item, captcha, code)
-            self.events.put(("search_done", (item, captcha, result)))
+            self.events.put(("search_done", (item, captcha, result, code)))
         except Exception as exc:
             self.events.put(("error", (item, str(exc))))
 
@@ -252,8 +255,8 @@ class ZxgkApp(tk.Tk):
                     item, challenge = payload
                     self._handle_captcha_ready(item, challenge)
                 elif event == "search_done":
-                    item, captcha, result = payload
-                    self._handle_search_done(item, captcha, result)
+                    item, captcha, result, code = payload
+                    self._handle_search_done(item, captcha, result, code)
                 elif event == "error":
                     item, message = payload
                     self._handle_error(item, message)
@@ -273,11 +276,13 @@ class ZxgkApp(tk.Tk):
         self.status_var.set("请输入验证码，按 Enter 提交")
         self._render_queue()
 
-    def _handle_search_done(self, item: QueryItem, captcha: CaptchaChallenge, result) -> None:
+    def _handle_search_done(self, item: QueryItem, captcha: CaptchaChallenge, result, code: str) -> None:
         self.busy = False
         if result.error:
             item.status = STATUS_CAPTCHA_ERROR
             item.error = result.error
+            self.current_item = item
+            self.current_captcha = captcha
             self.status_var.set(result.error)
             self._render_queue()
             self.captcha_entry.delete(0, tk.END)
@@ -291,12 +296,21 @@ class ZxgkApp(tk.Tk):
         item.status = STATUS_DONE
         item.output_path = out
         item.error = None
-        self._delete_captcha(captcha)
-        self.current_item = None
-        self.current_captcha = None
         self.captcha_entry.delete(0, tk.END)
         self._render_queue()
         self.status_var.set(f"已完成：{item.name}")
+
+        next_item = self._next_pending_item()
+        if next_item:
+            self.current_item = next_item
+            self.current_captcha = captcha
+            self.current_label_var.set(f"当前：{next_item.name}")
+            self._submit_with_captcha(next_item, captcha, code)
+            return
+
+        self._delete_captcha(captcha)
+        self.current_item = None
+        self.current_captcha = None
         self._advance_queue()
 
     def _handle_error(self, item: QueryItem, message: str) -> None:
@@ -340,6 +354,12 @@ class ZxgkApp(tk.Tk):
 
     def _uses_batch_output(self) -> bool:
         return len(self.items) > 2
+
+    def _next_pending_item(self) -> QueryItem | None:
+        for item in self.items:
+            if item.status == STATUS_PENDING:
+                return item
+        return None
 
     def _finish_batch_output_if_ready(self) -> None:
         if not self._uses_batch_output() or self.batch_output_path:

@@ -1,10 +1,14 @@
 import json
 import unittest
 
-from zxgk_tool.client import extract_captcha_id, parse_search_response
+from zxgk_tool.client import CourtClient, extract_captcha_id, parse_search_response
 
 
 class ClientHelpersTest(unittest.TestCase):
+    def test_court_client_ignores_environment_proxy_settings(self):
+        client = CourtClient()
+        self.assertFalse(client.session.trust_env)
+
     def test_extract_captcha_id_from_page(self):
         html = '<input id="captchaId" name="captchaId" type="hidden" value="abc123"/>'
         self.assertEqual(extract_captcha_id(html), "abc123")
