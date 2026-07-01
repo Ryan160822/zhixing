@@ -1,0 +1,4 @@
+pillow
+requests
+ddddocr
+pyinstaller
