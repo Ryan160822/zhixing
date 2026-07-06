@@ -7,7 +7,7 @@ from unittest.mock import patch
 
 from zxgk_tool.app import ZxgkApp
 from zxgk_tool.client import CaptchaChallenge, SearchResult
-from zxgk_tool.models import QueryItem, STATUS_CAPTCHA_ERROR, STATUS_DONE, STATUS_PENDING
+from zxgk_tool.models import QueryItem, STATUS_CAPTCHA_ERROR, STATUS_DONE, STATUS_FAILED, STATUS_PENDING
 
 
 class DummyBoolVar:
@@ -169,17 +169,25 @@ class AutoSolveTest(unittest.TestCase):
             self.assertIsNone(app.current_captcha)
             self.assertFalse(cap_path.exists())
 
-    def test_auto_error_falls_back_to_manual_after_max(self) -> None:
+    def test_auto_error_skips_item_after_max(self) -> None:
         app, items = self.make_app(auto=True, attempts=5)
+        advanced = []
         app._fetch_captcha_for = lambda item: self.fail("should not refetch after max")
+        app._advance_queue = lambda: advanced.append(True)
         with tempfile.TemporaryDirectory() as d:
             cap_path = Path(d) / "c.png"
             cap_path.write_bytes(b"x")
             captcha = CaptchaChallenge("c1", cap_path)
             app.current_captcha = captcha
             app._handle_search_done(items[0], captcha, SearchResult([], 0, "验证码错误或已过期"), "ab12")
-            self.assertTrue(app.captcha_entry.focused)
-            self.assertTrue(cap_path.exists())
+            self.assertEqual(items[0].status, STATUS_FAILED)
+            self.assertIn("已跳过", items[0].error)
+            self.assertIsNone(app.current_item)
+            self.assertIsNone(app.current_captcha)
+            self.assertEqual(app.auto_attempts, 0)
+            self.assertFalse(cap_path.exists())
+            self.assertEqual(advanced, [True])
+            self.assertFalse(app.captcha_entry.focused)
 
     def test_auto_submit_increments_attempts(self) -> None:
         app, items = self.make_app(auto=True, attempts=2)

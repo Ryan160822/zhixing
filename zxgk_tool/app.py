@@ -83,7 +83,7 @@ class ZxgkApp(tk.Tk):
         notice.columnconfigure(0, weight=1)
         tk.Label(
             notice,
-            text="粘贴名单后自动识别个人/企业；验证码人工输入，其余自动完成。",
+            text="粘贴名单后自动识别个人/企业；验证码自动识别，连续失败自动跳过，可切换人工输入。",
             bg="#1d5d8f",
             fg="#ffffff",
             font=("PingFang SC", 13, "bold"),
@@ -308,18 +308,32 @@ class ZxgkApp(tk.Tk):
     def _handle_search_done(self, item: QueryItem, captcha: CaptchaChallenge, result, code: str) -> None:
         self.busy = False
         if result.error:
-            item.status = STATUS_CAPTCHA_ERROR
             item.error = result.error
             self.current_item = item
             self.current_captcha = captcha
-            self._render_queue()
             self.captcha_entry.delete(0, tk.END)
-            if should_auto_attempt(self.auto_var.get(), self.auto_attempts):
-                self.status_var.set(f"验证码识别错误，自动换一张重试（已 {self.auto_attempts} 次）")
+            if self.auto_var.get():
+                if should_auto_attempt(True, self.auto_attempts):
+                    item.status = STATUS_CAPTCHA_ERROR
+                    self._render_queue()
+                    self.status_var.set(f"验证码识别错误，自动换一张重试（已 {self.auto_attempts} 次）")
+                    self._delete_captcha(captcha)
+                    self.current_captcha = None
+                    self._fetch_captcha_for(item)
+                    return
+                # 自动模式下连续失败达到上限：跳过该条，继续队列（无人值守）
+                item.status = STATUS_FAILED
+                item.error = f"验证码连续识别失败 {MAX_AUTO_ATTEMPTS} 次，已跳过"
                 self._delete_captcha(captcha)
+                self.current_item = None
                 self.current_captcha = None
-                self._fetch_captcha_for(item)
+                self.auto_attempts = 0
+                self._render_queue()
+                self.status_var.set(f"{item.name}：验证码识别失败次数过多，已跳过")
+                self._advance_queue()
                 return
+            item.status = STATUS_CAPTCHA_ERROR
+            self._render_queue()
             self.status_var.set(result.error)
             self.captcha_entry.focus_set()
             return
